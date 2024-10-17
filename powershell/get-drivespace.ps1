@@ -24,5 +24,8 @@ function Get-DiskUsage {
     }
 }
 
-# Run the disk usage report
-Get-DiskUsage
+# Start running the disk usage report immediately when the script runs
+Begin {
+    Get-DiskUsage
+}
+
