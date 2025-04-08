@@ -1,0 +1,108 @@
+services: 
+  nocodb_app: 
+    container_name: nocodb_app
+    depends_on: 
+      psql_db: 
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment: 
+      NC_PUBLIC_URL: "https://nocodb.bullfrogit.net"
+      # NC_AUTH_JWT_SECRET: ""
+      NC_ADMIN_EMAIL: "ashton@bullfrogit.net"
+      NC_ADMIN_PASSWORD: "${NC_ADMIN_PASSWORD}"
+      # NC_DISABLE_EMAIL_AUTH: "false"
+      ## Database Settings ##
+      NC_DB: "pg://psql_db:5432?u=postgres&p=${POSTGRES_PASSWORD}&d=${POSTGRES_DB}"
+      NC_REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      NC_REDIS_JOB_URL: "redis://:${REDIS_PASSWORD}@redis:6379/1"
+      NC_THROTTLER_REDIS: "redis://:${REDIS_PASSWORD}@redis:6379/2"
+      ## SMTP Settings ##
+      NC_SMTP_FROM: "nocodb@bullfrogit.net"
+      NC_SMTP_HOST: "smtp.resend.com"
+      NC_SMTP_PORT: "587"
+      NC_SMTP_USERNAME: "resend"
+      NC_SMTP_PASSWORD: "${SMTP_PASSWORD}"
+      NC_SMTP_SECURE: "true"
+      NC_SMTP_IGNORE_TLS: "false"
+      ## S3 Bucket Settings ##
+      # NC_S3_BUCKET_NAME: ""
+      # NC_S3_REGION: ""
+      # NC_S3_ENDPOINT: ""
+      # NC_S3_ACCESS_KEY: ""
+      # NC_S3_ACCESS_SECRET: ""
+      # NC_S3_FORCE_PATH_STYLE: ""
+      # NC_S3_ACL: ""
+      # NC_ATTACHMENT_FIELD_SIZE: ""
+      # NC_MAX_ATTACHMENTS_ALLOWED: ""
+      # NC_ATTACHMENT_RETENTION_DAYS: ""
+      # NC_SECURE_ATTACHMENTS: ""
+      # NC_ATTACHMENT_EXPIRE_SECONDS: ""
+    image: "nocodb/nocodb:latest"
+    ports: 
+      - "8080:8080"
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes: 
+      - "/mnt/data1/nocodb_data:/usr/app/data"
+    networks:
+      - nocodb-network
+  psql_db: 
+    env_file: .env
+    environment: 
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: "${POSTGRES_USER}"
+    healthcheck: 
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    image: postgres:16.6
+    restart: always
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes: 
+      - "/mnt/db_data/psql:/var/lib/postgresql/data"
+    networks:
+      - nocodb-network
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    env_file: .env
+    command:
+      - /bin/sh
+      - -c
+      - redis-server --requirepass "${REDIS_PASSWORD}"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--raw", "incr", "ping" ]
+      interval: 6s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - /mnt/db_data/redis:/data
+    networks:
+      - nocodb-network
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    env_file: .env
+    entrypoint: /bin/sh
+    volumes:
+      - /mnt/db_data/minio:/export
+    command: -c 'mkdir -p /export/nocodb && /usr/bin/minio server /export'
+    networks:
+      - nocodb-network
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --schedule "0 2 * * 6" --cleanup
+    restart: unless-stopped
+    networks:
+      - nocodb-network
+networks:
+  nocodb-network:
+    external: true
